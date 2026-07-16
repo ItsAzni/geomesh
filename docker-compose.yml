@@ -1,0 +1,27 @@
+services:
+  geomesh:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: geomesh:latest
+    container_name: geomesh
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "8080:8080/tcp"
+    volumes:
+      - ./config:/app/config:ro
+      - ./geoip:/app/geoip:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/status"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

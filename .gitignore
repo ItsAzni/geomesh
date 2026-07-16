@@ -1,0 +1,5 @@
+bin/
+*.mmdb
+test-fixtures/*.mmdb
+/geoip/
+/config/

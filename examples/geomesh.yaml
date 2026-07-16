@@ -1,0 +1,84 @@
+# GeoMesh Configuration
+# Docs: https://github.com/itsazni/geomesh
+
+server:
+  # DNS server address (handles UDP + TCP)
+  listen: ":53"
+
+  # REST API (remove or set to "" to disable)
+  api: ":8080"
+
+  # Logging
+  log_level: info   # debug | info | warn | error
+  log_json: false   # true = JSON structured logging for production
+
+geoip:
+  city_db: /app/geoip/GeoLite2-City.mmdb
+  asn_db: /app/geoip/GeoLite2-ASN.mmdb
+
+zones:
+  - name: example.com
+    routes:
+      # play.example.com — Geo routing to the nearest region
+      - name: play
+        policy: geo
+        default: us    # fallback region if no match is found
+        ttl: 60
+        regions:
+          - name: asia
+            countries: [ID, SG, MY, TH, VN, PH, JP, KR, HK, TW]
+            endpoints:
+              - address: 103.10.10.10
+                weight: 1
+              - address: 103.10.10.11
+                weight: 2     # this endpoint receives 2x traffic
+            health_check:
+              type: tcp
+              port: 80
+              interval: 30
+              timeout: 5
+              retries: 3
+          - name: us
+            countries: [US, CA, MX]
+            endpoints:
+              - address: 45.10.10.10
+                weight: 1
+            health_check:
+              type: http
+              port: 80
+              path: /health
+              interval: 30
+              timeout: 5
+              retries: 3
+
+      # latency.example.com — Latency routing based on shortest Haversine distance
+      - name: latency
+        policy: latency
+        ttl: 60
+        endpoints:
+          - address: 1.2.3.4
+            latitude: 37.7749
+            longitude: -122.4194
+          - address: 5.6.7.8
+            latitude: 35.6895
+            longitude: 139.6917
+        health_check:
+          type: udp
+          port: 53
+          interval: 10
+          timeout: 2
+          retries: 2
+
+      # mc.example.com — Minecraft Health Check routing
+      - name: mc
+        policy: failover
+        ttl: 30
+        endpoints:
+          - address: 204.77.4.220
+          - address: 185.207.166.156
+        health_check:
+          type: mcjava
+          port: 25565
+          interval: 15
+          timeout: 5
+          retries: 3

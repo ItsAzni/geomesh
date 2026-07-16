@@ -1,0 +1,57 @@
+# Minecraft Server Config (Latency Based)
+# Routes players to the server closest to them physically to ensure the lowest ping.
+# Requires MaxMind GeoIP databases to calculate the Haversine distance.
+
+server:
+  listen: ":53"
+  api: ":8080"
+  log_level: info
+
+geoip:
+  city_db: /app/geoip/GeoLite2-City.mmdb
+  asn_db: /app/geoip/GeoLite2-ASN.mmdb
+
+zones:
+  - name: mynetwork.net
+    routes:
+      - name: play
+        policy: latency
+        ttl: 60
+        # Health check applied to all endpoints below
+        health_check:
+          type: mcjava
+          port: 25565
+          interval: 10
+          timeout: 3
+          retries: 2
+        endpoints:
+          - address: 198.51.100.1
+            latitude: 37.7749
+            longitude: -122.4194 # San Francisco, North America
+          - address: 198.51.100.2
+            latitude: 52.5200
+            longitude: 13.4050   # Berlin, Europe
+          - address: 198.51.100.3
+            latitude: 1.3521
+            longitude: 103.8198  # Singapore, Asia
+
+      # Example for Bedrock Edition on the same servers
+      - name: bedrock
+        policy: latency
+        ttl: 60
+        health_check:
+          type: mcbedrock
+          port: 19132
+          interval: 10
+          timeout: 3
+          retries: 2
+        endpoints:
+          - address: 198.51.100.1
+            latitude: 37.7749
+            longitude: -122.4194
+          - address: 198.51.100.2
+            latitude: 52.5200
+            longitude: 13.4050
+          - address: 198.51.100.3
+            latitude: 1.3521
+            longitude: 103.8198

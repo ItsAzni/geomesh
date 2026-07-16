@@ -1,0 +1,57 @@
+# Website Config (Geo-Based & Weighted Routing)
+# Routes visitors to regional servers based on their Continent or Country.
+# Falls back to a global weighted load balancer if the region doesn't match.
+
+server:
+  listen: ":53"
+  api: ":8080"
+  log_level: info
+
+geoip:
+  city_db: /app/geoip/GeoLite2-City.mmdb
+  asn_db: /app/geoip/GeoLite2-ASN.mmdb
+
+zones:
+  - name: mywebsite.com
+    routes:
+      - name: www
+        policy: geo
+        default: global # Fallback region if client IP doesn't match EU or AS
+        ttl: 300
+        regions:
+          - name: europe
+            continents: [EU]
+            endpoints:
+              - address: 10.0.0.1
+              - address: 10.0.0.2
+            health_check:
+              type: https
+              port: 443
+              path: "/health"
+              interval: 15
+              timeout: 5
+          
+          - name: asia
+            continents: [AS]
+            endpoints:
+              - address: 20.0.0.1
+            health_check:
+              type: https
+              port: 443
+              path: "/health"
+              interval: 15
+              timeout: 5
+          
+          - name: global
+            # For anyone not in EU or AS, distribute traffic 80/20 between two servers
+            endpoints:
+              - address: 30.0.0.1
+                weight: 80 # Receives 80% of traffic
+              - address: 30.0.0.2
+                weight: 20 # Receives 20% of traffic
+            health_check:
+              type: https
+              port: 443
+              path: "/health"
+              interval: 15
+              timeout: 5

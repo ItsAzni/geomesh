@@ -1,0 +1,44 @@
+# API Server Config (Failover & Round-Robin)
+# Simple setup without requiring GeoIP databases.
+# Shows Active-Passive failover and Active-Active load balancing.
+
+server:
+  listen: ":53"
+  api: ":8080"
+  log_level: info
+  
+# Note: geoip block is omitted because we don't use 'geo' or 'latency' policies here.
+
+zones:
+  - name: myapi.dev
+    routes:
+      # Active-Passive Failover
+      # Always returns 104.18.2.1 unless it goes down, then falls back to 104.18.3.1
+      - name: api
+        policy: failover
+        ttl: 30
+        health_check:
+          type: tcp
+          port: 443
+          interval: 5
+          timeout: 2
+          retries: 3
+        endpoints:
+          - address: 104.18.2.1 # Primary
+          - address: 104.18.3.1 # Backup
+      
+      # Active-Active Load Balancing (Round-Robin)
+      # Alternates returning each healthy IP sequentially
+      - name: cdn
+        policy: roundrobin
+        ttl: 60
+        health_check:
+          type: http
+          port: 80
+          path: "/ping"
+          interval: 15
+          timeout: 5
+        endpoints:
+          - address: 192.0.2.10
+          - address: 192.0.2.11
+          - address: 192.0.2.12
