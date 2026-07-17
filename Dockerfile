@@ -15,9 +15,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/geomesh \
     ./cmd/geomesh
 
-FROM alpine:3.21
+FROM alpine:3.24
 
-RUN apk --no-cache add ca-certificates tzdata bash curl && \
+RUN apk upgrade --no-cache && \
+    apk --no-cache add ca-certificates tzdata bash curl && \
     addgroup -g 1001 -S geomesh && \
     adduser  -u 1001 -S geomesh -G geomesh
 

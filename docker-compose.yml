@@ -1,10 +1,6 @@
 services:
   geomesh:
-    build:
-      context: .
-      args:
-        VERSION: ${VERSION:-dev}
-    image: geomesh:latest
+    image: itsazni/geomesh:latest
     container_name: geomesh
     restart: unless-stopped
     ports:
