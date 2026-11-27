@@ -1,11 +1,7 @@
+# GeoMesh Configuration
 # Website Config (Geo-Based & Weighted Routing)
 # Routes visitors to regional servers based on their Continent or Country.
 # Falls back to a global weighted load balancer if the region doesn't match.
-
-server:
-  listen: ":53"
-  api: ":8080"
-  log_level: info
 
 geoip:
   city_db: /app/geoip/GeoLite2-City.mmdb
@@ -30,7 +26,7 @@ zones:
               path: "/health"
               interval: 15
               timeout: 5
-          
+
           - name: asia
             continents: [AS]
             endpoints:
@@ -41,7 +37,7 @@ zones:
               path: "/health"
               interval: 15
               timeout: 5
-          
+
           - name: global
             # For anyone not in EU or AS, distribute traffic 80/20 between two servers
             endpoints:

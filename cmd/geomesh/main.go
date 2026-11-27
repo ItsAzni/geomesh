@@ -21,7 +21,8 @@ var Version = "dev"
 
 func main() {
 	versionFlag := flag.Bool("version", false, "Print version and exit")
-	configFlag := flag.String("config", "config", "Path to config file or directory")
+	serverFlag := flag.String("server", "server.yaml", "Path to server config file")
+	configFlag := flag.String("config", "config", "Path to zones/geoip config file or directory")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "GeoMesh - Authoritative GeoDNS Server\n\n")
@@ -37,9 +38,20 @@ func main() {
 		os.Exit(0)
 	}
 
+	serverPath := *serverFlag
 	configPath := *configFlag
 	if flag.NArg() > 0 {
 		configPath = flag.Arg(0)
+	}
+
+	if serverPath == "server.yaml" {
+		if _, err := os.Stat(serverPath); os.IsNotExist(err) {
+			if err := os.WriteFile(serverPath, []byte(config.DefaultServerYAML), 0644); err != nil {
+				slog.Warn("Failed to create default server.yaml", "err", err)
+			} else {
+				fmt.Printf("Created default server config: %s\n", serverPath)
+			}
+		}
 	}
 
 	// Auto-create default config directory if it doesn't exist
@@ -51,9 +63,12 @@ func main() {
 		}
 	}
 
-	cfg, err := config.LoadFile(configPath)
-	if err != nil {
+	loadCurrentConfig := func() (*config.Config, error) {
+		return config.Load(serverPath, configPath)
+	}
 
+	cfg, err := loadCurrentConfig()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: failed to load config: %v\n", err)
 		os.Exit(1)
 	}
@@ -127,7 +142,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	configWatcher, err := config.NewWatcher(configPath, func(newCfg *config.Config) {
+	configWatcher, err := config.NewWatcherWithLoader(configPath, loadCurrentConfig, func(newCfg *config.Config) {
 		slog.Info("config change detected, reloading")
 		if err := reloadFull(newCfg); err != nil {
 			slog.Error("config reload failed", "err", err)
@@ -153,7 +168,7 @@ func main() {
 
 	if cfg.Server.API != "" {
 		apiServer := api.NewServer(cfg.Server.API, zoneReg, healthStore, func() error {
-			newCfg, err := config.LoadFile(configPath)
+			newCfg, err := loadCurrentConfig()
 			if err != nil {
 				return err
 			}

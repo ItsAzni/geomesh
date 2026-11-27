@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,79 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func LoadFile(path string) (*Config, error) {
+// DefaultServerYAML is the default template for server.yaml.
+const DefaultServerYAML = `# GeoMesh Server Configuration
+# Docs: https://github.com/itsazni/geomesh
+
+listen: ":53"        # DNS address (UDP + TCP)
+api: ":8080"         # REST API address, remove or set to "" to disable
+log_level: info      # debug | info | warn | error
+log_json: false      # true = structured JSON logs
+`
+
+type serverConfigFile struct {
+	Server   *ServerConfig `yaml:"server"`
+	Listen   *string       `yaml:"listen"`
+	API      *string       `yaml:"api"`
+	LogLevel *string       `yaml:"log_level"`
+	LogJSON  *bool         `yaml:"log_json"`
+}
+
+type directoryConfigFile struct {
+	Server *ServerConfig `yaml:"server"`
+	Listen *string       `yaml:"listen"`
+	GeoIP  GeoIPConfig   `yaml:"geoip"`
+	Zones  []ZoneConfig  `yaml:"zones"`
+}
+
+func LoadServerConfig(path string) (*ServerConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read server config %q: %w", path, err)
+	}
+
+	var raw serverConfigFile
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&raw); err != nil && err != io.EOF {
+		return nil, fmt.Errorf("parse server config %q: %w", path, err)
+	}
+
+	srv := &ServerConfig{
+		Listen:   ":53",
+		LogLevel: "info",
+	}
+
+	if raw.Server != nil {
+		if raw.Server.Listen != "" {
+			srv.Listen = raw.Server.Listen
+		}
+		if raw.Server.API != "" {
+			srv.API = raw.Server.API
+		}
+		if raw.Server.LogLevel != "" {
+			srv.LogLevel = raw.Server.LogLevel
+		}
+		srv.LogJSON = raw.Server.LogJSON
+	}
+
+	if raw.Listen != nil && *raw.Listen != "" {
+		srv.Listen = *raw.Listen
+	}
+	if raw.API != nil {
+		srv.API = *raw.API
+	}
+	if raw.LogLevel != nil && *raw.LogLevel != "" {
+		srv.LogLevel = *raw.LogLevel
+	}
+	if raw.LogJSON != nil {
+		srv.LogJSON = *raw.LogJSON
+	}
+
+	return srv, nil
+}
+
+func LoadZonesConfig(path string) (*Config, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("stat config %q: %w", path, err)
@@ -24,7 +97,7 @@ func LoadFile(path string) (*Config, error) {
 				return err
 			}
 			if !i.IsDir() && (strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
-				if err := loadInto(p, cfg); err != nil {
+				if err := loadDirectoryFile(p, cfg); err != nil {
 					return err
 				}
 			}
@@ -34,23 +107,91 @@ func LoadFile(path string) (*Config, error) {
 			return nil, err
 		}
 	} else {
-		if err := loadInto(path, cfg); err != nil {
+		if err := loadSingleFile(path, cfg); err != nil {
 			return nil, err
 		}
 	}
 
-	applyDefaults(cfg)
+	applyZoneDefaults(cfg)
 	return cfg, nil
 }
 
-func loadInto(path string, cfg *Config) error {
-	f, err := os.Open(path)
+// Load loads both the server config and the zones/geoip config, merging them into a complete Config.
+func Load(serverPath, configPath string) (*Config, error) {
+	var srv *ServerConfig
+
+	if serverPath != "" {
+		if _, err := os.Stat(serverPath); err == nil {
+			loadedSrv, err := LoadServerConfig(serverPath)
+			if err != nil {
+				return nil, err
+			}
+			srv = loadedSrv
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("stat server config %q: %w", serverPath, err)
+		} else if serverPath != "server.yaml" {
+			return nil, fmt.Errorf("server config file not found: %s", serverPath)
+		}
+	}
+
+	cfg, err := LoadZonesConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if srv != nil {
+		cfg.Server = *srv
+	} else if cfg.Server.Listen == "" {
+		cfg.Server.Listen = ":53"
+		if cfg.Server.LogLevel == "" {
+			cfg.Server.LogLevel = "info"
+		}
+	}
+
+	return cfg, nil
+}
+
+// LoadFile parses configuration from a file or directory.
+// When given a directory, server configuration is forbidden inside the directory files.
+func LoadFile(path string) (*Config, error) {
+	return Load("server.yaml", path)
+}
+
+func loadDirectoryFile(path string, cfg *Config) error {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("open config %q: %w", path, err)
 	}
-	defer f.Close()
 
-	dec := yaml.NewDecoder(f)
+	var parsed directoryConfigFile
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&parsed); err != nil && err != io.EOF {
+		return fmt.Errorf("parse config %q: %w", path, err)
+	}
+
+	if parsed.Server != nil || parsed.Listen != nil {
+		return fmt.Errorf("config %q: server configuration is not allowed in config directory; server config must be in its own file (e.g. server.yaml), config directory is only for zones and geoip", path)
+	}
+
+	if parsed.GeoIP.CityDB != "" {
+		cfg.GeoIP.CityDB = parsed.GeoIP.CityDB
+	}
+	if parsed.GeoIP.ASNDB != "" {
+		cfg.GeoIP.ASNDB = parsed.GeoIP.ASNDB
+	}
+
+	cfg.Zones = append(cfg.Zones, parsed.Zones...)
+	return nil
+}
+
+func loadSingleFile(path string, cfg *Config) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("open config %q: %w", path, err)
+	}
+
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 
 	temp := &Config{}
@@ -82,13 +223,7 @@ func loadInto(path string, cfg *Config) error {
 	return nil
 }
 
-func applyDefaults(cfg *Config) {
-	if cfg.Server.Listen == "" {
-		cfg.Server.Listen = ":53"
-	}
-	if cfg.Server.LogLevel == "" {
-		cfg.Server.LogLevel = "info"
-	}
+func applyZoneDefaults(cfg *Config) {
 	for zi := range cfg.Zones {
 		for ri := range cfg.Zones[zi].Routes {
 			r := &cfg.Zones[zi].Routes[ri]
@@ -124,6 +259,13 @@ func LoadReader(r io.Reader) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	applyDefaults(cfg)
+	if cfg.Server.Listen == "" {
+		cfg.Server.Listen = ":53"
+	}
+	if cfg.Server.LogLevel == "" {
+		cfg.Server.LogLevel = "info"
+	}
+
+	applyZoneDefaults(cfg)
 	return cfg, nil
 }

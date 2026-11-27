@@ -12,6 +12,7 @@ import (
 type Watcher struct {
 	watcher  *fsnotify.Watcher
 	path     string
+	loader   func() (*Config, error)
 	callback func(*Config)
 	done     chan bool
 	mu       sync.Mutex
@@ -19,6 +20,12 @@ type Watcher struct {
 }
 
 func NewWatcher(path string, callback func(*Config)) (*Watcher, error) {
+	return NewWatcherWithLoader(path, func() (*Config, error) {
+		return LoadFile(path)
+	}, callback)
+}
+
+func NewWatcherWithLoader(path string, loader func() (*Config, error), callback func(*Config)) (*Watcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -27,6 +34,7 @@ func NewWatcher(path string, callback func(*Config)) (*Watcher, error) {
 	w := &Watcher{
 		watcher:  watcher,
 		path:     path,
+		loader:   loader,
 		callback: callback,
 		done:     make(chan bool),
 	}
@@ -67,7 +75,7 @@ func (w *Watcher) Start() {
 			}
 			w.timer = time.AfterFunc(200*time.Millisecond, func() {
 				slog.Info("reloading config", "path", w.path)
-				cfg, err := LoadFile(w.path)
+				cfg, err := w.loader()
 				if err != nil {
 					slog.Error("config reload failed", "path", w.path, "err", err)
 					return

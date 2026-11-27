@@ -144,29 +144,21 @@ Now, any DNS query for `geomesh.example.com` (or subdomains like `play.geomesh.e
 
 GeoMesh is configured with YAML. Below is a minimal working example followed by a full annotated example.
 
-**Minimal:**
+### 1. Server Configuration (`server.yaml`)
+Server configurations are process-level and managed in `server.yaml`:
 ```yaml
-server:
-  listen: ":53"
-
-zones:
-  - name: example.com
-    routes:
-      - name: www
-        policy: roundrobin
-        endpoints:
-          - address: 1.2.3.4
-          - address: 5.6.7.8
+# server.yaml
+listen: ":53"        # DNS address (UDP + TCP)
+api: ":8080"         # REST API address, remove to disable
+log_level: info      # debug | info | warn | error
+log_json: false      # true = structured JSON logs
 ```
 
-**Full annotated example:**
-```yaml
-server:
-  listen: ":53"        # DNS address (UDP + TCP)
-  api: ":8080"         # REST API address, remove to disable
-  log_level: info      # debug | info | warn | error
-  log_json: false      # true = structured JSON logs
+### 2. Zones & GeoIP Configuration (`config/` directory)
+The `config/` directory is dedicated solely to DNS zones and GeoIP routing paths.
 
+**Example `config/geomesh.yaml`:**
+```yaml
 geoip:
   city_db: /app/geoip/GeoLite2-City.mmdb
   asn_db:  /app/geoip/GeoLite2-ASN.mmdb
@@ -270,17 +262,26 @@ Health check configuration fields: `type`, `port`, `path` (HTTP only), `interval
 
 ## Multi-File Configuration
 
-GeoMesh can load a single YAML file or an entire directory. When a directory is given, all `.yaml` and `.yml` files within it are merged into a single configuration. This is useful for splitting zones across files.
+GeoMesh separates server infrastructure configuration from zone definitions:
+- **`server.yaml`**: Contains daemon settings (`listen`, `api`, `log_level`, `log_json`).
+- **`config/`**: Directory containing zone files (`.yaml` / `.yml`) and optional GeoIP configurations. Any server configuration inside `config/` is strictly prohibited to prevent collisions.
 
 ```
-config/
+.
 ├── server.yaml
-├── example.com.yaml
-└── internal.net.yaml
+└── config/
+    ├── geoip.yaml
+    ├── example.com.yaml
+    └── internal.net.yaml
 ```
 
+Run GeoMesh:
 ```bash
-geomesh config/
+# Uses server.yaml and config/ by default:
+geomesh
+
+# Or specify custom paths:
+geomesh -server server.yaml -config config/
 ```
 
 ---

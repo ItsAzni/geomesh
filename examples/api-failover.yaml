@@ -1,12 +1,4 @@
-# API Server Config (Failover & Round-Robin)
-# Simple setup without requiring GeoIP databases.
-# Shows Active-Passive failover and Active-Active load balancing.
-
-server:
-  listen: ":53"
-  api: ":8080"
-  log_level: info
-  
+# GeoMesh Configuration
 # Note: geoip block is omitted because we don't use 'geo' or 'latency' policies here.
 
 zones:
@@ -26,7 +18,7 @@ zones:
         endpoints:
           - address: 104.18.2.1 # Primary
           - address: 104.18.3.1 # Backup
-      
+
       # Active-Active Load Balancing (Round-Robin)
       # Alternates returning each healthy IP sequentially
       - name: cdn

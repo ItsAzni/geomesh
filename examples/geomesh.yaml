@@ -1,17 +1,6 @@
 # GeoMesh Configuration
 # Docs: https://github.com/itsazni/geomesh
 
-server:
-  # DNS server address (handles UDP + TCP)
-  listen: ":53"
-
-  # REST API (remove or set to "" to disable)
-  api: ":8080"
-
-  # Logging
-  log_level: info   # debug | info | warn | error
-  log_json: false   # true = JSON structured logging for production
-
 geoip:
   city_db: /app/geoip/GeoLite2-City.mmdb
   asn_db: /app/geoip/GeoLite2-ASN.mmdb

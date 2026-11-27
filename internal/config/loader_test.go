@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,6 +72,181 @@ func TestLoadServerConfig(t *testing.T) {
 	}
 	if cfg.Server.API != ":8080" {
 		t.Errorf("expected api :8080, got %q", cfg.Server.API)
+	}
+}
+
+func TestLoadServerConfigSeparate(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. Flat format
+	flatPath := filepath.Join(tmpDir, "server_flat.yaml")
+	flatContent := `
+listen: ":5353"
+api: ":9090"
+log_level: debug
+log_json: true
+`
+	if err := os.WriteFile(flatPath, []byte(flatContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := config.LoadServerConfig(flatPath)
+	if err != nil {
+		t.Fatalf("failed to load flat server config: %v", err)
+	}
+	if srv.Listen != ":5353" || srv.API != ":9090" || srv.LogLevel != "debug" || !srv.LogJSON {
+		t.Errorf("unexpected flat srv values: %+v", srv)
+	}
+
+	// 2. Nested under server:
+	nestedPath := filepath.Join(tmpDir, "server_nested.yaml")
+	nestedContent := `
+server:
+  listen: ":1053"
+  api: ""
+  log_level: warn
+  log_json: false
+`
+	if err := os.WriteFile(nestedPath, []byte(nestedContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv2, err := config.LoadServerConfig(nestedPath)
+	if err != nil {
+		t.Fatalf("failed to load nested server config: %v", err)
+	}
+	if srv2.Listen != ":1053" || srv2.API != "" || srv2.LogLevel != "warn" || srv2.LogJSON {
+		t.Errorf("unexpected nested srv values: %+v", srv2)
+	}
+}
+
+func TestDirectoryConfigForbidsServer(t *testing.T) {
+	tmpDir := t.TempDir()
+	badFile := filepath.Join(tmpDir, "zone_with_server.yaml")
+	content := `
+server:
+  listen: ":53"
+zones:
+  - name: forbidden.local
+    routes:
+      - name: www
+        policy: first
+        endpoints:
+          - address: 1.1.1.1
+`
+	if err := os.WriteFile(badFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := config.LoadZonesConfig(tmpDir)
+	if err == nil {
+		t.Fatal("expected error when server section is present in directory config, got nil")
+	}
+	if !strings.Contains(err.Error(), "server configuration is not allowed in config directory") {
+		t.Errorf("expected server prohibition error, got: %v", err)
+	}
+}
+
+func TestDirectoryConfigZonesAndGeoIP(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. GeoIP config
+	geoipPath := filepath.Join(tmpDir, "geoip.yaml")
+	geoipContent := `
+geoip:
+  city_db: /path/to/city.mmdb
+  asn_db: /path/to/asn.mmdb
+`
+	if err := os.WriteFile(geoipPath, []byte(geoipContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Zone A
+	zoneAPath := filepath.Join(tmpDir, "zone_a.yaml")
+	zoneAContent := `
+zones:
+  - name: a.example.com
+    routes:
+      - name: app
+        policy: first
+        endpoints:
+          - address: 10.0.0.1
+`
+	if err := os.WriteFile(zoneAPath, []byte(zoneAContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Zone B
+	zoneBPath := filepath.Join(tmpDir, "zone_b.yaml")
+	zoneBContent := `
+zones:
+  - name: b.example.com
+    routes:
+      - name: app
+        policy: first
+        endpoints:
+          - address: 10.0.0.2
+`
+	if err := os.WriteFile(zoneBPath, []byte(zoneBContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadZonesConfig(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to load zones config directory: %v", err)
+	}
+
+	if cfg.GeoIP.CityDB != "/path/to/city.mmdb" || cfg.GeoIP.ASNDB != "/path/to/asn.mmdb" {
+		t.Errorf("geoip not loaded properly: %+v", cfg.GeoIP)
+	}
+	if len(cfg.Zones) != 2 {
+		t.Fatalf("expected 2 zones merged, got %d", len(cfg.Zones))
+	}
+	if cfg.Zones[0].Name != "a.example.com" && cfg.Zones[1].Name != "a.example.com" {
+		t.Errorf("zone a missing")
+	}
+}
+
+func TestLoadServerAndZonesCombined(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	serverPath := filepath.Join(tmpDir, "server.yaml")
+	serverContent := `
+listen: ":5354"
+api: ":8081"
+log_level: warn
+log_json: true
+`
+	if err := os.WriteFile(serverPath, []byte(serverContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	zonePath := filepath.Join(configDir, "example.com.yaml")
+	zoneContent := `
+zones:
+  - name: example.com
+    routes:
+      - name: test
+        policy: first
+        endpoints:
+          - address: 1.1.1.1
+`
+	if err := os.WriteFile(zonePath, []byte(zoneContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(serverPath, configDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Server.Listen != ":5354" || cfg.Server.API != ":8081" || cfg.Server.LogLevel != "warn" || !cfg.Server.LogJSON {
+		t.Errorf("unexpected server config: %+v", cfg.Server)
+	}
+	if len(cfg.Zones) != 1 || cfg.Zones[0].Name != "example.com" {
+		t.Errorf("unexpected zones: %+v", cfg.Zones)
 	}
 }
 

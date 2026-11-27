@@ -8,6 +8,7 @@ services:
       - "53:53/tcp"
       - "8080:8080/tcp"
     volumes:
+      - ./server.yaml:/app/server.yaml:ro
       - ./config:/app/config:ro
       - ./geoip:/app/geoip:ro
     logging:

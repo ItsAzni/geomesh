@@ -1,3 +1,4 @@
+# GeoMesh Configuration
 # Minecraft Server Config (Latency Based)
 # Routes players to the server closest to them physically to ensure the lowest ping.
 # Requires MaxMind GeoIP databases to calculate the Haversine distance.

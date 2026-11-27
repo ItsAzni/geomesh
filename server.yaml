@@ -1,0 +1,7 @@
+# GeoMesh Server Configuration
+# Docs: https://github.com/itsazni/geomesh
+
+listen: ":53"        # DNS address (UDP + TCP)
+api: ":8080"         # REST API address, remove or set to "" to disable
+log_level: info      # debug | info | warn | error
+log_json: false      # true = structured JSON logs
